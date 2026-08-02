@@ -32,9 +32,7 @@ class BatchSubmitterForm(AFXForm):
         self.userSubKw.setValue('')
 
     def getFirstDialog(self):
-        self.folderKw.setValue('')
         self.filesKw.setValue('[]')
-        self.userSubKw.setValue('')
         self.mainDB = BatchSubmitterDB(self)
         return self.mainDB
 
@@ -45,19 +43,19 @@ class BatchSubmitterForm(AFXForm):
         files = self.mainDB.getSelectedFiles()
 
         if not os.path.isdir(folder):
-            showAFXErrorDialog(dialog, 'Input Folder does not exist.')
+            showAFXErrorDialog(dialog, 'Input folder does not exist.')
             dialog.onKeywordError(self.folderKw)
             return False
         if not [f for f in os.listdir(folder) if f.lower().endswith('.inp')]:
-            showAFXErrorDialog(dialog, 'No .inp files found in Input Folder.')
+            showAFXErrorDialog(dialog, 'No .inp files found in input folder.')
             dialog.onKeywordError(self.folderKw)
             return False
         if self.cpusKw.getValue() < 1:
-            showAFXErrorDialog(dialog, 'CPUs / Job must be at least 1.')
+            showAFXErrorDialog(dialog, 'CPUs per job must be at least 1.')
             dialog.onKeywordError(self.cpusKw)
             return False
         if user_sub and not os.path.isfile(user_sub):
-            showAFXErrorDialog(dialog, 'User Subroutine file does not exist.')
+            showAFXErrorDialog(dialog, 'User subroutine file does not exist.')
             dialog.onKeywordError(self.userSubKw)
             return False
         if not files:
@@ -82,7 +80,7 @@ class BatchSubmitterDB(AFXDataDialog):
         self.form = form
         self.folderDb = None
         self.subFileDb = None
-        self.getActionButton(self.ID_CLICKED_OK).setText('Run')
+        self.getActionButton(self.ID_CLICKED_OK).setText('Create jobs')
 
         FXMAPFUNC(self, SEL_COMMAND, self.ID_PICK_FOLDER, BatchSubmitterDB.onPickFolder)
         FXMAPFUNC(self, SEL_COMMAND, self.ID_FOLDER_SELECTED, BatchSubmitterDB.onFolderSelected)
@@ -92,30 +90,36 @@ class BatchSubmitterDB(AFXDataDialog):
         FXMAPFUNC(self, SEL_COMMAND, self.ID_PICK_SUB, BatchSubmitterDB.onPickSub)
         FXMAPFUNC(self, SEL_COMMAND, self.ID_SUB_SELECTED, BatchSubmitterDB.onSubSelected)
 
-        note = (
-            'Choose the input files to create and submit. Monitor, results, '
-            'and kill are handled by the native Abaqus Job Manager.'
-        )
-        AFXNote(self, note)
-
-        box = FXGroupBox(self, 'Settings', FRAME_GROOVE | LAYOUT_FILL_X)
+        box = FXGroupBox(self, 'Job settings', FRAME_GROOVE | LAYOUT_FILL_X)
         row = FXHorizontalFrame(box, LAYOUT_FILL_X)
-        AFXTextField(row, 76, 'Input Folder:', form.folderKw, 0)
-        FXButton(row, 'Browse Folder...', None, self, self.ID_PICK_FOLDER)
+        AFXTextField(
+            row, 58, 'Input folder:', form.folderKw, 0, LAYOUT_FILL_X)
+        FXButton(row, 'Browse...', None, self, self.ID_PICK_FOLDER)
 
         row = FXHorizontalFrame(box, LAYOUT_FILL_X)
-        AFXTextField(row, 76, 'User Subroutine:', form.userSubKw, 0)
-        FXButton(row, 'Browse Fortran...', None, self, self.ID_PICK_SUB)
+        AFXTextField(
+            row, 58, 'User subroutine:', form.userSubKw, 0, LAYOUT_FILL_X)
+        FXButton(row, 'Browse...', None, self, self.ID_PICK_SUB)
 
         row = FXHorizontalFrame(box, LAYOUT_FILL_X)
-        AFXTextField(row, 10, 'CPUs / Job:', form.cpusKw, 0)
-        FXCheckButton(row, 'Submit After Creation', form.submitKw, 0, CHECKBUTTON_NORMAL)
+        AFXTextField(row, 8, 'CPUs per job:', form.cpusKw, 0)
+        FXCheckButton(
+            row, 'Submit all after creation', form.submitKw, 0,
+            CHECKBUTTON_NORMAL)
+        FXLabel(
+            box, 'Immediate submission starts all selected jobs concurrently.',
+            None, JUSTIFY_LEFT | LAYOUT_FILL_X)
 
-        listBox = FXGroupBox(self, 'Input Files', FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y)
+        listBox = FXGroupBox(
+            self, 'Input files',
+            FRAME_GROOVE | LAYOUT_FILL_X | LAYOUT_FILL_Y)
         buttons = FXHorizontalFrame(listBox, LAYOUT_FILL_X)
-        FXButton(buttons, 'Refresh File List', None, self, self.ID_RELOAD)
-        FXButton(buttons, 'Select All', None, self, self.ID_SELECT_ALL)
-        FXButton(buttons, 'Select None', None, self, self.ID_SELECT_NONE)
+        FXButton(buttons, 'Refresh', None, self, self.ID_RELOAD)
+        FXButton(buttons, 'Select all', None, self, self.ID_SELECT_ALL)
+        FXButton(buttons, 'Clear selection', None, self, self.ID_SELECT_NONE)
+        self.fileCountLabel = FXLabel(
+            buttons, 'No folder selected', None,
+            JUSTIFY_RIGHT | LAYOUT_FILL_X)
         vf = FXVerticalFrame(
             listBox, FRAME_SUNKEN | FRAME_THICK | LAYOUT_FILL_X | LAYOUT_FILL_Y,
             0, 0, 0, 0, 0, 0, 0, 0
@@ -147,6 +151,7 @@ class BatchSubmitterDB(AFXDataDialog):
         return 1
 
     def onPickSub(self, sender, sel, ptr):
+        self.form.subPickKw.setValue(self.form.userSubKw.getValue())
         patterns = (
             'Abaqus Fortran (*.for)\n'
             'Fortran source (*.f)\n'
@@ -192,11 +197,15 @@ class BatchSubmitterDB(AFXDataDialog):
     def reloadInpList(self):
         self.tree.clearItems()
         folder = self.form.folderKw.getValue().strip().strip('"')
+        files = []
         if os.path.isdir(folder):
             files = [f for f in os.listdir(folder) if f.lower().endswith('.inp')]
             files.sort()
             for name in files:
                 self.tree.addItemLast(name)
+            self.fileCountLabel.setText('%d INP file(s)' % len(files))
+        else:
+            self.fileCountLabel.setText('No folder selected')
         if self.shown():
             self.tree.create()
             self.resize(self.getDefaultWidth(), self.getDefaultHeight())
@@ -217,8 +226,38 @@ class BatchSubmitterDB(AFXDataDialog):
         return files
 
 
+class BatchSubmitterToolset(AFXToolsetGui):
+
+    ID_OPEN = AFXToolsetGui.ID_LAST
+
+    def __init__(self):
+        AFXToolsetGui.__init__(self, toolsetName='Batch Submit Jobs')
+        FXMAPFUNC(
+            self, SEL_COMMAND, self.ID_OPEN,
+            BatchSubmitterToolset.onOpen)
+        group = AFXToolbarGroup(self)
+        AFXToolButton(
+            group, '\tBatch Submit Jobs', icon,
+            self, self.ID_OPEN)
+        self.form = None
+
+    def onOpen(self, sender, sel, ptr):
+        if self.form is not None:
+            try:
+                self.form.cancel(None, 0)
+            except:
+                pass
+        sendCommand(kernelInit, False)
+        self.form = BatchSubmitterForm(self)
+        self.form.activate()
+        return 1
+
+
 thisPath = os.path.abspath(__file__)
 thisDir = os.path.dirname(thisPath).replace('\\', '/')
+iconPath = os.path.join(
+    thisDir, 'icons', 'BatchSubmit.png').replace('\\', '/')
+icon = afxCreatePNGIcon(iconPath)
 if thisDir not in sys.path:
     sys.path.append(thisDir)
 
@@ -230,15 +269,7 @@ kernelInit = (
     "reload(abq_batch_submitter_kernel)\n"
 ) % thisDir
 
-toolset = getAFXApp().getAFXMainWindow().getPluginToolset()
-toolset.registerGuiMenuButton(
-    object=BatchSubmitterForm(toolset),
-    buttonText='Jobs|Batch Submit INP Jobs...',
-    kernelInitString=kernelInit,
-    version='1.0',
-    author='Codex',
-    applicableModules=ALL,
-    description='Select input files from a folder, create Abaqus jobs, and submit them.'
-)
+mainWindow = getAFXApp().getAFXMainWindow()
+mainWindow.registerToolset(BatchSubmitterToolset(), GUI_IN_TOOLBAR)
 
 
